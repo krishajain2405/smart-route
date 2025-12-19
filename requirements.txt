@@ -7,9 +7,9 @@ plotly
 folium
 streamlit-folium
 scikit-learn
-ortools
 osmnx
 networkx
 qrcode
 pillow
 scipy
+
