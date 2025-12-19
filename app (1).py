@@ -18,6 +18,7 @@ import os
 # --- 1. SETTINGS & CONFIG ---
 st.set_page_config(page_title="Smart Waste AI Mission Control", layout="wide")
 
+# Geographic Hubs for Multi-Fleet Assignment
 GARAGES = {
     "Truck 1 (Worli)": (19.0178, 72.8478),
     "Truck 2 (Bandra)": (19.0596, 72.8295),
@@ -34,10 +35,11 @@ def load_data():
     target = 'data.csv' if 'data.csv' in all_files else (all_files[0] if all_files else None)
     if not target: return None
     try:
+        # Detects encoding and separators automatically
         df = pd.read_csv(target, sep=None, engine='python', encoding='utf-8-sig')
         df.columns = [c.strip().lower() for c in df.columns]
         
-        # Standardizing Column Names
+        # Standardizing Column Names for consistency across modules
         rename_dict = {
             'bin_location_lat': 'lat', 'bin_location_lon': 'lon',
             'bin_fill_percent': 'fill', 'timestamp': 'timestamp',
@@ -63,7 +65,7 @@ df = load_data()
 
 # --- 3. SIDEBAR NAVIGATION ---
 st.sidebar.title("🌲 Navigation")
-page = st.sidebar.radio("Go to", ["Home", "EDA Dashboard", "Predictive AI", "Route Optimization", "Financial Impact"])
+page = st.sidebar.radio("Go to", ["Home", "Exploratory Data Analysis", "Predictive AI", "Route Optimization", "Financial Impact"])
 
 if df is not None:
     # --- HOME PAGE ---
@@ -93,7 +95,7 @@ if df is not None:
     # --- EDA DASHBOARD ---
     elif page == "EDA Dashboard":
         st.title("📊 Exploratory Data Analysis")
-        st.subheader("Waste Accumulation Patterns")
+        st.write("Interactive charts for analyzing waste patterns.")
         
         # Hour of Day Analysis
         hourly_fill = df.groupby(['hour_of_day', 'area_type'])['fill'].mean().reset_index()
@@ -135,19 +137,19 @@ if df is not None:
     elif page == "Route Optimization":
         st.title("🚛 AI Multi-Fleet Mission Control")
 
-        # Sidebar Controls
+        # Sidebar Dispatch Controls
         st.sidebar.header("🕹️ Dispatch Controls")
         selected_truck = st.sidebar.selectbox("Select Active Truck", list(GARAGES.keys()))
         threshold = st.sidebar.slider("Fill Threshold (%)", 0, 100, 75)
         
-        # Simulation Slider
+        # Simulation Slider to handle historical timestamp data
         times = sorted(df['timestamp'].unique())
         default_time = times[int(len(times)*0.85)]
         sim_time = st.sidebar.select_slider("Simulation Time", options=times, value=default_time)
         
         df_snap = df[df['timestamp'] == sim_time].copy()
 
-        # Assignment Logic
+        # Assignment Logic based on nearest garage hub
         def assign_truck_logic(row):
             loc = (row['lat'], row['lon'])
             dists = {name: get_dist(loc, coords) for name, coords in GARAGES.items()}
@@ -157,7 +159,7 @@ if df is not None:
         all_my_bins = df_snap[(df_snap['assigned_truck'] == selected_truck) & (df_snap['fill'] >= threshold)]
         all_my_bins = all_my_bins.sort_values('fill', ascending=False)
 
-        # Multi-Trip Pipeline
+        # Multi-Trip Pipeline Logic (Slices data into 8-bin trips)
         st.sidebar.markdown("---")
         st.sidebar.subheader("📦 Trip Pipeline")
         bins_per_trip = 8
@@ -172,13 +174,14 @@ if df is not None:
         else:
             current_mission_bins = pd.DataFrame()
 
-        # Metrics
+        # Dashboard Metrics for Routing
         col1, col2, col3 = st.columns(3)
         col1.metric("Selected Vehicle", selected_truck)
         col2.metric("Total Bins Assigned", total_pending)
         col3.metric("Pickups for This Trip", len(current_mission_bins))
 
-        # Map Rendering
+        # Map Rendering using real road network data
+        [Image of the vehicle routing problem (VRP) illustrating how multiple customer demands are satisfied by a fleet of vehicles starting from a central depot]
         try:
             G = get_map_graph()
             m = folium.Map(location=[19.0760, 72.8777], zoom_start=12, tiles="CartoDB positron")
@@ -188,6 +191,7 @@ if df is not None:
                 is_mine = row['assigned_truck'] == selected_truck
                 is_in_current = (row['bin_id'] in current_mission_bins['bin_id'].values) if not current_mission_bins.empty else False
                 
+                # Dynamic Marker Colors: Red (Active), Blue (Queue), Orange (Other Truck), Green (Clean)
                 if is_full and is_mine and is_in_current: color = 'red'
                 elif is_full and is_mine and not is_in_current: color = 'blue'
                 elif is_full and not is_mine: color = 'orange'
@@ -197,54 +201,7 @@ if df is not None:
                               popup=f"Bin {row['bin_id']}: {row['fill']}%",
                               icon=folium.Icon(color=color, icon='trash', prefix='fa')).add_to(m)
 
-            # Routing Logic
+            # Routing Path: Garage -> Assigned Bins -> Deonar
             garage_loc = GARAGES[selected_truck]
             if not current_mission_bins.empty:
-                pts = [garage_loc] + list(zip(current_mission_bins['lat'], current_mission_bins['lon'])) + [DEONAR_DUMPING]
-                path_coords = []
-                for i in range(len(pts)-1):
-                    try:
-                        n1 = ox.nearest_nodes(G, pts[i][1], pts[i][0])
-                        n2 = ox.nearest_nodes(G, pts[i+1][1], pts[i+1][0])
-                        route = nx.shortest_path(G, n1, n2, weight='length')
-                        path_coords.extend([[G.nodes[node]['y'], G.nodes[node]['x']] for node in route])
-                    except:
-                        path_coords.append([pts[i][0], pts[i][1]])
-                        path_coords.append([pts[i+1][0], pts[i+1][1]])
-                
-                if path_coords:
-                    folium.PolyLine(path_coords, color="#3498db", weight=6, opacity=0.8).add_to(m)
-
-            folium.Marker(garage_loc, popup="Hub", icon=folium.Icon(color='blue', icon='truck', prefix='fa')).add_to(m)
-            folium.Marker(DEONAR_DUMPING, popup="Deonar Yard", icon=folium.Icon(color='black', icon='home', prefix='fa')).add_to(m)
-
-            st_folium(m, width=1200, height=550, key="mission_map")
-
-            if not current_mission_bins.empty:
-                st.subheader(f"📲 Driver Navigation: Trip {trip_num}")
-                google_url = f"https://www.google.com/maps/dir/?api=1&origin={garage_loc[0]},{garage_loc[1]}&destination={DEONAR_DUMPING[0]},{DEONAR_DUMPING[1]}&waypoints=" + "|".join([f"{lat},{lon}" for lat, lon in zip(current_mission_bins['lat'], current_mission_bins['lon'])])
-                st.image(qrcode.make(google_url).get_image(), width=180)
-
-        except Exception as e:
-            st.error(f"Map Error: {e}")
-
-    # --- FINANCIAL IMPACT ---
-    elif page == "Financial Impact":
-        st.title("💎 ROI & Sustainability Model")
-        
-        # Static placeholders based on logic
-        opex_savings = 15400
-        revenue_gain = 8500
-        co2_saved_kg = 420
-        
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Operational Savings", f"₹{opex_savings:,}")
-        k2.metric("New Recycling Revenue", f"₹{revenue_gain:,}")
-        k3.metric("CO2 Prevented", f"{co2_saved_kg} kg")
-        
-        st.subheader("3-Year Cash Flow Projection")
-        projection = pd.DataFrame({'Month': range(1, 37), 'Balance': np.linspace(-50000, 400000, 36)})
-        st.plotly_chart(px.line(projection, x='Month', y='Balance', title="Investment Break-even Curve"))
-
-else:
-    st.error("No CSV data found. Please ensure your file is in the sidebar.")
+                pts = [garage_loc] + list(zip(current_mission_bins['lat'], current_mission_bins['lon'])) +
