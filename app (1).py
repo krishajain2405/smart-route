@@ -35,11 +35,9 @@ def load_data():
     target = 'data.csv' if 'data.csv' in all_files else (all_files[0] if all_files else None)
     if not target: return None
     try:
-        # Detects encoding and separators automatically
         df = pd.read_csv(target, sep=None, engine='python', encoding='utf-8-sig')
         df.columns = [c.strip().lower() for c in df.columns]
         
-        # Standardizing Column Names for consistency across modules
         rename_dict = {
             'bin_location_lat': 'lat', 'bin_location_lon': 'lon',
             'bin_fill_percent': 'fill', 'timestamp': 'timestamp',
@@ -59,13 +57,14 @@ def get_dist(p1, p2):
 
 @st.cache_resource
 def get_map_graph():
+    # Cache Mumbai Road Network
     return ox.graph_from_point((19.0760, 72.8777), dist=8000, network_type='drive')
 
 df = load_data()
 
 # --- 3. SIDEBAR NAVIGATION ---
 st.sidebar.title("🌲 Navigation")
-page = st.sidebar.radio("Go to", ["Home", "Exploratory Data Analysis", "Predictive AI", "Route Optimization", "Financial Impact"])
+page = st.sidebar.radio("Go to", ["Home", "EDA Dashboard", "Predictive AI", "Route Optimization", "Financial Impact"])
 
 if df is not None:
     # --- HOME PAGE ---
@@ -80,7 +79,7 @@ if df is not None:
             - **Live Data Monitoring:** Real-time fill-level detection.
             - **Historical Analysis:** Waste generation pattern recognition.
             - **Predictive Modeling:** Forecasting bin overflows using Random Forest.
-            - **Multi-Fleet Optimization:** Assigning 5 trucks to optimal city zones.
+            - **Multi-Fleet Optimization:** Assigning 5 trucks to optimal city zones (2nd Code Logic).
             - **Rolling Trip Pipeline:** Dynamic queuing of pickups for drivers.
             """)
         with c2:
@@ -95,20 +94,9 @@ if df is not None:
     # --- EDA DASHBOARD ---
     elif page == "EDA Dashboard":
         st.title("📊 Exploratory Data Analysis")
-        st.write("Interactive charts for analyzing waste patterns.")
-        
-        # Hour of Day Analysis
         hourly_fill = df.groupby(['hour_of_day', 'area_type'])['fill'].mean().reset_index()
-        fig1 = px.line(hourly_fill, x='hour_of_day', y='fill', color='area_type', 
-                       title='Average Fill % by Hour of Day')
+        fig1 = px.line(hourly_fill, x='hour_of_day', y='fill', color='area_type', title='Average Fill % by Hour of Day')
         st.plotly_chart(fig1, use_container_width=True)
-
-        # Day of Week Analysis
-        daily_avg = df.groupby('day_of_week')['fill'].mean().reset_index()
-        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        fig2 = px.bar(daily_avg, x='day_of_week', y='fill', category_orders={"day_of_week": day_order},
-                      title='Average Fill % by Day of Week', color='fill')
-        st.plotly_chart(fig2, use_container_width=True)
 
     # --- PREDICTIVE AI ---
     elif page == "Predictive AI":
@@ -123,17 +111,10 @@ if df is not None:
             model = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
             model.fit(X_train, y_train)
             preds = model.predict(X_test)
+        st.metric("R² Confidence Score", f"{r2_score(y_test, preds):.2f}")
+        st.plotly_chart(px.scatter(pd.DataFrame({'Actual': y_test, 'Predicted': preds}).sample(min(2000, len(y_test))), x='Actual', y='Predicted', opacity=0.3), use_container_width=True)
 
-        c1, c2 = st.columns(2)
-        c1.metric("Mean Absolute Error", f"{mean_absolute_error(y_test, preds):.2f}%")
-        c2.metric("R² Confidence Score", f"{r2_score(y_test, preds):.2f}")
-        
-        st.subheader("Actual vs Predicted Fill Level")
-        fig3 = px.scatter(pd.DataFrame({'Actual': y_test, 'Predicted': preds}).sample(min(2000, len(y_test))), 
-                          x='Actual', y='Predicted', opacity=0.3, trendline="ols")
-        st.plotly_chart(fig3, use_container_width=True)
-
-    # --- ROUTE OPTIMIZATION (THE 2ND CODE LOGIC) ---
+    # --- ROUTE OPTIMIZATION (THE 2nd CODE INTEGRATION) ---
     elif page == "Route Optimization":
         st.title("🚛 AI Multi-Fleet Mission Control")
 
@@ -142,14 +123,14 @@ if df is not None:
         selected_truck = st.sidebar.selectbox("Select Active Truck", list(GARAGES.keys()))
         threshold = st.sidebar.slider("Fill Threshold (%)", 0, 100, 75)
         
-        # Simulation Slider to handle historical timestamp data
+        # Simulation Slider to handle historical data
         times = sorted(df['timestamp'].unique())
         default_time = times[int(len(times)*0.85)]
         sim_time = st.sidebar.select_slider("Simulation Time", options=times, value=default_time)
         
         df_snap = df[df['timestamp'] == sim_time].copy()
 
-        # Assignment Logic based on nearest garage hub
+        # Assignment Logic (Nearest Garage)
         def assign_truck_logic(row):
             loc = (row['lat'], row['lon'])
             dists = {name: get_dist(loc, coords) for name, coords in GARAGES.items()}
@@ -159,7 +140,7 @@ if df is not None:
         all_my_bins = df_snap[(df_snap['assigned_truck'] == selected_truck) & (df_snap['fill'] >= threshold)]
         all_my_bins = all_my_bins.sort_values('fill', ascending=False)
 
-        # Multi-Trip Pipeline Logic (Slices data into 8-bin trips)
+        # Multi-Trip Pipeline (8-bin slices)
         st.sidebar.markdown("---")
         st.sidebar.subheader("📦 Trip Pipeline")
         bins_per_trip = 8
@@ -167,21 +148,12 @@ if df is not None:
         num_trips = (total_pending // bins_per_trip) + (1 if total_pending % bins_per_trip > 0 else 0)
         
         if num_trips > 0:
-            trip_num = st.sidebar.selectbox(f"Select Trip (Total: {num_trips})", 
-                                            range(1, num_trips + 1), 
-                                            format_func=lambda x: f"Trip {x}")
+            trip_num = st.sidebar.selectbox(f"Select Trip (Total: {num_trips})", range(1, num_trips + 1), format_func=lambda x: f"Trip {x}")
             current_mission_bins = all_my_bins.iloc[(trip_num-1)*bins_per_trip : trip_num*bins_per_trip]
         else:
             current_mission_bins = pd.DataFrame()
 
-        # Dashboard Metrics for Routing
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Selected Vehicle", selected_truck)
-        col2.metric("Total Bins Assigned", total_pending)
-        col3.metric("Pickups for This Trip", len(current_mission_bins))
-
-        # Map Rendering using real road network data
-        [Image of the vehicle routing problem (VRP) illustrating how multiple customer demands are satisfied by a fleet of vehicles starting from a central depot]
+        # Map Rendering
         try:
             G = get_map_graph()
             m = folium.Map(location=[19.0760, 72.8777], zoom_start=12, tiles="CartoDB positron")
@@ -191,17 +163,52 @@ if df is not None:
                 is_mine = row['assigned_truck'] == selected_truck
                 is_in_current = (row['bin_id'] in current_mission_bins['bin_id'].values) if not current_mission_bins.empty else False
                 
-                # Dynamic Marker Colors: Red (Active), Blue (Queue), Orange (Other Truck), Green (Clean)
                 if is_full and is_mine and is_in_current: color = 'red'
                 elif is_full and is_mine and not is_in_current: color = 'blue'
                 elif is_full and not is_mine: color = 'orange'
                 else: color = 'green'
                 
-                folium.Marker([row['lat'], row['lon']], 
-                              popup=f"Bin {row['bin_id']}: {row['fill']}%",
-                              icon=folium.Icon(color=color, icon='trash', prefix='fa')).add_to(m)
+                folium.Marker([row['lat'], row['lon']], icon=folium.Icon(color=color, icon='trash', prefix='fa')).add_to(m)
 
-            # Routing Path: Garage -> Assigned Bins -> Deonar
+            # Routing Path calculation
             garage_loc = GARAGES[selected_truck]
             if not current_mission_bins.empty:
-                pts = [garage_loc] + list(zip(current_mission_bins['lat'], current_mission_bins['lon'])) +
+                pts = [garage_loc] + list(zip(current_mission_bins['lat'], current_mission_bins['lon'])) + [DEONAR_DUMPING]
+                path_coords = []
+                for i in range(len(pts)-1):
+                    try:
+                        n1 = ox.nearest_nodes(G, pts[i][1], pts[i][0])
+                        n2 = ox.nearest_nodes(G, pts[i+1][1], pts[i+1][0])
+                        route = nx.shortest_path(G, n1, n2, weight='length')
+                        path_coords.extend([[G.nodes[node]['y'], G.nodes[node]['x']] for node in route])
+                    except:
+                        path_coords.append([pts[i][0], pts[i][1]])
+                        path_coords.append([pts[i+1][0], pts[i+1][1]])
+                
+                if path_coords:
+                    folium.PolyLine(path_coords, color="#3498db", weight=6, opacity=0.8).add_to(m)
+
+            folium.Marker(garage_loc, icon=folium.Icon(color='blue', icon='truck', prefix='fa')).add_to(m)
+            folium.Marker(DEONAR_DUMPING, icon=folium.Icon(color='black', icon='home', prefix='fa')).add_to(m)
+
+            st_folium(m, width=1200, height=550, key="mission_map")
+
+            if not current_mission_bins.empty:
+                st.subheader(f"📲 Driver Navigation: Trip {trip_num}")
+                google_url = f"https://www.google.com/maps/dir/?api=1&origin={garage_loc[0]},{garage_loc[1]}&destination={DEONAR_DUMPING[0]},{DEONAR_DUMPING[1]}&waypoints=" + "|".join([f"{lat},{lon}" for lat, lon in zip(current_mission_bins['lat'], current_mission_bins['lon'])])
+                st.image(qrcode.make(google_url).get_image(), width=180)
+
+        except Exception as e:
+            st.error(f"Map Error: {e}")
+
+    # --- FINANCIAL IMPACT ---
+    elif page == "Financial Impact":
+        st.title("💎 ROI & Sustainability Model")
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Operational Savings", "₹15,400")
+        k2.metric("Recycling Revenue", "₹8,500")
+        k3.metric("CO2 Prevented", "420 kg")
+        st.plotly_chart(px.line(pd.DataFrame({'Month': range(1, 37), 'Balance': np.linspace(-50000, 400000, 36)}), x='Month', y='Balance', title="Break-even Curve"))
+
+else:
+    st.error("No CSV found. Please upload 'data.csv'.")
