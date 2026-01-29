@@ -1840,10 +1840,12 @@ def show_analytics():
             st.subheader("📊 Actual vs Predicted Fill Levels")
     
             plot_df = pd.DataFrame({
-                "Actual": y_test,
+                "Actual": y_test.values,
                 "Predicted": predictions
             })
-            plot_df["Error"] = abs(plot_df["Actual"] - plot_df["Predicted"])
+            
+            plot_df["Error"] = np.abs(plot_df["Actual"] - plot_df["Predicted"])
+
     
             fig = px.scatter(
                 plot_df,
