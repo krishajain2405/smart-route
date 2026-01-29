@@ -2,9 +2,11 @@ streamlit
 pandas
 numpy
 plotly
+pydeck
 folium
 streamlit-folium
+firebase-admin
 scikit-learn
-osmnx
-networkx
-qrcode
+requests
+Pillow
+ortools
