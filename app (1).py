@@ -270,23 +270,31 @@ from datetime import datetime
 
 def fetch_live_data():
     try:
-        r = requests.get(f"{FIREBASE_URL}/bins.json", timeout=10)
-        data = r.json()
+        url = f"{FIREBASE_URL}/bins.json"
+        r = requests.get(url, timeout=10)
 
-        bins = []
+        st.write("📡 Firebase status code:", r.status_code)
+
+        if r.status_code != 200:
+            st.error(f"Firebase error {r.status_code}")
+            return []
+
+        data = r.json()
+        st.write("🔥 Raw Firebase data:", data)
 
         if not data:
-            return bins
+            st.warning("Firebase returned EMPTY data")
+            return []
 
+        bins = []
         for bin_id, info in data.items():
             fill = int(info.get("fill_level", 0))
 
-            if fill >= 85:
-                status = "Critical"
-            elif fill >= 60:
-                status = "Warning"
-            else:
-                status = "Normal"
+            status = (
+                "Critical" if fill >= 85
+                else "Warning" if fill >= 60
+                else "Normal"
+            )
 
             bins.append({
                 "bin_id": bin_id,
@@ -294,14 +302,16 @@ def fetch_live_data():
                 "fill_level": fill,
                 "weight_kg": info.get("weight_kg", 0),
                 "status": status,
-                "last_updated": datetime.now()  # ✅ ADD THIS
+                "last_updated": datetime.now()
             })
 
         return bins
 
     except Exception as e:
-        st.error("❌ Firebase fetch failed")
+        st.error(f"❌ Firebase fetch exception: {e}")
         return []
+
+   
 
 
 
