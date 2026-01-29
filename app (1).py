@@ -1873,9 +1873,7 @@ def show_analytics():
     
                             st.plotly_chart(fig, use_container_width=True)
     
-                    except Exception as e:
-                        st.error(f"Training failed: {e}")
-        
+                   
     # TAB 3 — IMPACT MODEL
     # =====================================================
     with tab3:
