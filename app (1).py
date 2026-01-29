@@ -1839,38 +1839,42 @@ def show_analytics():
             # ---------------- ACTUAL vs PREDICTED ----------------
             st.subheader("📊 Actual vs Predicted Fill Levels")
     
+            # ---- SAFE PLOT DATA ----
             plot_df = pd.DataFrame({
-                "Actual": y_test.values,
-                "Predicted": predictions
+                "Actual": y_test.values.astype(float),
+                "Predicted": predictions.astype(float)
             })
             
             plot_df["Error"] = np.abs(plot_df["Actual"] - plot_df["Predicted"])
-
-    
+            
+            # 🔒 ABSOLUTELY REQUIRED
+            plot_df = plot_df.replace([np.inf, -np.inf], np.nan).dropna()
+            
+            # ---- ACTUAL vs PREDICTED PLOT ----
             fig = px.scatter(
                 plot_df,
                 x="Actual",
                 y="Predicted",
-                color="Error",
+                color=plot_df["Error"],  # <-- IMPORTANT CHANGE
                 color_continuous_scale="Viridis",
-                marginal_x="histogram",
-                marginal_y="histogram",
-                title="Actual vs Predicted Bin Fill Levels",
-                labels={
-                    "Actual": "Actual Fill Level (%)",
-                    "Predicted": "Predicted Fill Level (%)"
-                }
+                title="Actual vs Predicted Fill Levels",
             )
-    
-            # Ideal prediction line
+            
+            # Perfect prediction line
             fig.add_shape(
                 type="line",
                 x0=0, y0=0,
                 x1=100, y1=100,
                 line=dict(color="red", dash="dash")
             )
-    
+            
+            fig.update_layout(
+                xaxis_title="Actual Fill Level (%)",
+                yaxis_title="Predicted Fill Level (%)"
+            )
+            
             st.plotly_chart(fig, use_container_width=True)
+
 
         
     
