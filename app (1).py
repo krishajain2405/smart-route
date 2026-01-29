@@ -1780,53 +1780,95 @@ def show_analytics():
     
     # =====================================================
     with tab2:
-        st.markdown("### 🧠 AI Forecast Training")
+        st.subheader("🧠 Predictive Model for Bin Fill Level")
     
         if df is None:
             st.info("Upload data to train the model.")
         else:
-            if st.button("Train Random Forest Model"):
-                with st.spinner("Training model..."):
-                    model_df = df[['hour_of_day', 'bin_fill_percent']].dropna()
+            with st.spinner("Preparing data and training model..."):
     
-                    if len(model_df) < 10:
-                        st.warning("Not enough data to train the model.")
-                    else:
-                        X = model_df[['hour_of_day']]
-                        y = model_df['bin_fill_percent']
+                features = [
+                    'hour_of_day',
+                    'day_of_week',
+                    'ward',
+                    'area_type',
+                    'time_since_last_pickup'
+                ]
+                target = 'bin_fill_percent'
     
-                        model = RandomForestRegressor(
-                            n_estimators=50,
-                            random_state=42
-                        )
-                        model.fit(X, y)
+                model_df = df[features + [target]].dropna()
     
-                        st.success("✅ Model Trained Successfully")
-    
-                        # ---- METRICS ----
-                        c1, c2 = st.columns(2)
-                        c1.metric("Model Accuracy (R²)", "0.89")
-                        c2.metric("Mean Error", "±4.2%")
-    
-                        # ---- PLOT (THIS WAS MISSING) ----
-                        st.subheader("Prediction vs Actual")
-    
-                        hours = pd.DataFrame({'hour_of_day': range(0, 24)})
-                        preds = model.predict(hours)
-                        hours['Predicted Fill'] = preds
-    
-                        fig = px.line(
-                            hours,
-                            x='hour_of_day',
-                            y='Predicted Fill',
-                            title="Predicted Bin Fill Level by Hour",
-                            labels={
-                                'hour_of_day': 'Hour of Day',
-                                'Predicted Fill': 'Fill Level (%)'
-                            }
+                # One-hot encode categorical variables
+                for col in ['day_of_week', 'ward', 'area_type']:
+                    if col in model_df.columns:
+                        model_df = pd.get_dummies(
+                            model_df,
+                            columns=[col],
+                            drop_first=True
                         )
     
-                        st.plotly_chart(fig, use_container_width=True)
+                X = model_df.drop(columns=[target])
+                y = model_df[target]
+    
+                if len(X) < 20:
+                    st.warning("Not enough data to train the model.")
+                    return
+    
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+    
+                model = RandomForestRegressor(
+                    n_estimators=50,
+                    random_state=42,
+                    n_jobs=-1
+                )
+                model.fit(X_train, y_train)
+    
+                predictions = model.predict(X_test)
+    
+                mae = mean_absolute_error(y_test, predictions)
+                r2 = r2_score(y_test, predictions)
+    
+            # ---------------- METRICS ----------------
+            st.subheader("Model Performance")
+            c1, c2 = st.columns(2)
+            c1.metric("Mean Absolute Error (MAE)", f"{mae:.2f}%")
+            c2.metric("R² Score", f"{r2:.2f}")
+    
+            # ---------------- ACTUAL vs PREDICTED ----------------
+            st.subheader("📊 Actual vs Predicted Fill Levels")
+    
+            plot_df = pd.DataFrame({
+                "Actual": y_test,
+                "Predicted": predictions
+            })
+            plot_df["Error"] = abs(plot_df["Actual"] - plot_df["Predicted"])
+    
+            fig = px.scatter(
+                plot_df,
+                x="Actual",
+                y="Predicted",
+                color="Error",
+                color_continuous_scale="Viridis",
+                marginal_x="histogram",
+                marginal_y="histogram",
+                title="Actual vs Predicted Bin Fill Levels",
+                labels={
+                    "Actual": "Actual Fill Level (%)",
+                    "Predicted": "Predicted Fill Level (%)"
+                }
+            )
+    
+            # Ideal prediction line
+            fig.add_shape(
+                type="line",
+                x0=0, y0=0,
+                x1=100, y1=100,
+                line=dict(color="red", dash="dash")
+            )
+    
+            st.plotly_chart(fig, use_container_width=True)
 
         
     
