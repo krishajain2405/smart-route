@@ -1772,13 +1772,13 @@ def show_analytics():
                 else:
                     st.warning("Required columns missing for daily analysis.")
 
-    # =====================================================
-    # TAB 2 — PREDICTIVE AI
-    # =====================================================
-    # =====================================================
-# TAB 2 — PREDICTIVE AI (FIXED & CORRECT)
-# =====================================================
-with tab2:
+    #=====================================================
+     #TAB 2 — PREDICTIVE AI
+    #=====================================================
+    #=====================================================
+    
+
+    with tab2:
     st.markdown("### 🧠 AI Forecast Training")
 
     if df is None:
@@ -1874,6 +1874,7 @@ with tab2:
 
                 except Exception as e:
                     st.error(f"Training failed: {e}")
+
 
     # =====================================================
     # TAB 3 — IMPACT MODEL
