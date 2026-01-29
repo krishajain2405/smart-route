@@ -1775,49 +1775,105 @@ def show_analytics():
     # =====================================================
     # TAB 2 — PREDICTIVE AI
     # =====================================================
-    with tab2:
-        st.markdown("### 🧠 AI Forecast Training")
+    # =====================================================
+# TAB 2 — PREDICTIVE AI (FIXED & CORRECT)
+# =====================================================
+with tab2:
+    st.markdown("### 🧠 AI Forecast Training")
 
-        if df is None:
-            st.info("Upload data to train the model.")
-        else:
-            if st.button("Train Random Forest Model"):
-                with st.spinner("Training model..."):
-                    try:
-                        model_df = df[['hour_of_day', 'bin_fill_percent']].dropna()
+    if df is None:
+        st.info("Upload data to train the model.")
+    else:
+        if st.button("Train Random Forest Model"):
+            with st.spinner("Training Random Forest model..."):
+                try:
+                    # -----------------------------
+                    # Feature selection
+                    # -----------------------------
+                    feature_cols = [
+                        'hour_of_day',
+                        'day_of_week',
+                        'ward',
+                        'area_type',
+                        'time_since_last_pickup'
+                    ]
+                    target_col = 'bin_fill_percent'
 
-                        if len(model_df) < 10:
-                            st.warning("Not enough data to train the model.")
-                        else:
-                            X = model_df[['hour_of_day']]
-                            y = model_df['bin_fill_percent']
+                    model_df = df[feature_cols + [target_col]].dropna()
 
-                            model = RandomForestRegressor(
-                                n_estimators=50,
-                                random_state=42
-                            )
-                            model.fit(X, y)
+                    if len(model_df) < 20:
+                        st.warning("Not enough data to train the model.")
+                    else:
+                        # -----------------------------
+                        # Encode categorical variables
+                        # -----------------------------
+                        model_df = pd.get_dummies(
+                            model_df,
+                            columns=['day_of_week', 'ward', 'area_type'],
+                            drop_first=True
+                        )
 
-                            st.success("✅ Model Trained Successfully")
+                        X = model_df.drop(target_col, axis=1)
+                        y = model_df[target_col]
 
-                            m1, m2 = st.columns(2)
-                            m1.metric("Model Accuracy (R²)", "0.89")
-                            m2.metric("Mean Error", "±4.2%")
+                        # -----------------------------
+                        # Train / Test split
+                        # -----------------------------
+                        X_train, X_test, y_train, y_test = train_test_split(
+                            X, y, test_size=0.2, random_state=42
+                        )
 
-                            st.subheader("Prediction vs Reality")
+                        # -----------------------------
+                        # Train model
+                        # -----------------------------
+                        model = RandomForestRegressor(
+                            n_estimators=100,
+                            random_state=42,
+                            n_jobs=-1
+                        )
+                        model.fit(X_train, y_train)
 
-                            future_hours = pd.DataFrame({
-                                'hour_of_day': range(0, 24)
-                            })
-                            predictions = model.predict(future_hours)
-                            future_hours['Predicted Fill'] = predictions
+                        # -----------------------------
+                        # Evaluation
+                        # -----------------------------
+                        predictions = model.predict(X_test)
+                        mae = mean_absolute_error(y_test, predictions)
+                        r2 = r2_score(y_test, predictions)
 
-                            st.line_chart(
-                                future_hours.set_index('hour_of_day')
-                            )
+                        st.success("✅ Model Trained Successfully")
 
-                    except Exception as e:
-                        st.error(f"Training failed: {e}")
+                        c1, c2 = st.columns(2)
+                        c1.metric("Mean Absolute Error (MAE)", f"{mae:.2f}%")
+                        c2.metric("R² Score", f"{r2:.2f}")
+
+                        # -----------------------------
+                        # Prediction vs Actual plot
+                        # -----------------------------
+                        st.subheader("Prediction vs Actual")
+
+                        plot_df = pd.DataFrame({
+                            "Actual Fill (%)": y_test,
+                            "Predicted Fill (%)": predictions
+                        })
+
+                        fig = px.scatter(
+                            plot_df,
+                            x="Actual Fill (%)",
+                            y="Predicted Fill (%)",
+                            title="Actual vs Predicted Bin Fill Levels",
+                            trendline="ols"
+                        )
+
+                        fig.add_shape(
+                            type="line",
+                            x0=0, y0=0, x1=100, y1=100,
+                            line=dict(color="red", dash="dash")
+                        )
+
+                        st.plotly_chart(fig, use_container_width=True)
+
+                except Exception as e:
+                    st.error(f"Training failed: {e}")
 
     # =====================================================
     # TAB 3 — IMPACT MODEL
